@@ -1,0 +1,43 @@
+name: Enforce HTTPS when certificate is ready
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  actions: write
+
+jobs:
+  enforce-https:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable HTTPS or stop retrying when complete
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_FILE: enforce-https.yml
+        run: |
+          set -euo pipefail
+
+          if [[ "$(gh api "repos/${REPOSITORY}/pages" --jq '.https_enforced')" == "true" ]]; then
+            echo "HTTPS is already enforced."
+            gh api \
+              --method PUT \
+              "repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/disable"
+            exit 0
+          fi
+
+          if gh api \
+            --method PUT \
+            "repos/${REPOSITORY}/pages" \
+            -F https_enforced=true; then
+            echo "HTTPS enforcement enabled."
+            gh api \
+              --method PUT \
+              "repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/disable"
+          else
+            echo "The certificate is not ready yet; the scheduled workflow will retry."
+          fi
